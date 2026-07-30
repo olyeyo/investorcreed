@@ -47,7 +47,7 @@ export default function AuthGate({ children }) {
     return (
       <div style={{ ...mono, background: "#0a0e0c", color: "#e8e6d9", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
         <form onSubmit={signIn} style={{ border: "1px solid #2a3330", padding: 24, width: "100%", maxWidth: 360 }}>
-          <h1 style={{ fontSize: 13, letterSpacing: 2, textTransform: "uppercase", marginBottom: 16, color: "#ffb000" }}>
+          <h1 style={{ fontSize: 13, letterSpacing: 2, textTransform: "uppercase", marginBottom: 16, color: "#006DDB" }}>
             Outreach Terminal
           </h1>
 
@@ -78,7 +78,7 @@ export default function AuthGate({ children }) {
           <button
             type="submit"
             disabled={submitting}
-            style={{ background: submitting ? "#3a3730" : "#ffb000", color: "#0a0e0c", padding: "8px 14px", fontSize: 11, textTransform: "uppercase", letterSpacing: 1, border: "none", cursor: submitting ? "default" : "pointer", ...mono }}
+            style={{ background: submitting ? "#3a3730" : "#006DDB", color: "#fff", padding: "8px 14px", fontSize: 11, textTransform: "uppercase", letterSpacing: 1, border: "none", cursor: submitting ? "default" : "pointer", ...mono }}
           >
             {submitting ? "Signing in..." : "Sign in"}
           </button>

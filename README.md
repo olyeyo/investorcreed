@@ -19,8 +19,13 @@ across devices instead of living in one browser's localStorage.
 
 1. Open your project's SQL Editor: `https://supabase.com/dashboard/project/byygfvgqjtcajvlrhmcc/sql/new`
 2. Paste the contents of `supabase/schema.sql` and run it. This creates a
-   `kv_store` table with Row Level Security, so each signed-in user can only
-   ever see their own rows.
+   `kv_store` table with Row Level Security — it's now only used for one tiny
+   flag (whether the default contacts have been seeded for you yet).
+3. Then run `supabase/schema_v2_directory.sql` too (same place, new query).
+   This adds the real tables: `contacts` (your pipeline), `directory_batches`
+   (one row per spreadsheet you import), and `directory_investors` (the rows
+   inside each import, linked back to its batch). All three have RLS scoped
+   to your user, same as `kv_store`.
 
 ## 2. Restrict sign-ups to just you
 
@@ -95,11 +100,14 @@ DNS can take minutes to hours to propagate.
 
 - `xlsx` (SheetJS) parsing still happens entirely in the browser — the
   investor spreadsheet you import is never uploaded anywhere.
-- Data model: everything the app previously kept in `window.storage` (pipeline
-  contacts, imported directory) now lives in the `kv_store` table, one row per
-  key, scoped to your `user_id`. If you outgrow this later, it's a natural
-  migration path to proper relational tables (`contacts`, `directory`) with
-  real columns and indexes instead of JSON blobs.
+- Data model: the pipeline lives in `contacts`, one row per person. Every
+  spreadsheet you import becomes its own row in `directory_batches` (name, row
+  count, import date) plus its rows in `directory_investors` — so importing a
+  second or third spreadsheet never overwrites an earlier one, and you can
+  delete a single batch (and its rows) without touching the others.
+- Auth is email+password (see `AuthGate.jsx`) rather than magic-link, to avoid
+  Supabase's shared-sender email rate limit during normal use — set your
+  password directly in Authentication → Users in the dashboard.
 - The pipeline still comes pre-seeded with Sophia Amoruso, Kate McAndrew, and
   five pan-African investors on first load — that's `DEFAULT_CONTACTS` in
   `src/App.jsx`.

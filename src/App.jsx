@@ -2,8 +2,17 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import * as XLSX from "xlsx";
 import {
   Plus, X, Search, Trash2, Pencil, Instagram, Linkedin,
-  Mail, Link2, AlertTriangle, Clock, Check, Upload, ExternalLink,
+  Mail, Link2, AlertTriangle, Clock, Check, Upload, ExternalLink, Menu,
 } from "lucide-react";
+import * as db from "./lib/db.js";
+
+// ---------- brand ----------
+
+const BRAND = {
+  blue: "#006DDB",   // primary accent / CTAs
+  gold: "#C7A05F",   // secondary accent / highlights
+  maroon: "#59030E", // destructive / overdue / errors
+};
 
 // ---------- constants ----------
 
@@ -15,11 +24,11 @@ const DIR_STAGE_FILTERS = ["Pre-Seed", "Seed", "Early Stage", "Series A", "Serie
 
 const STATUS_STYLE = {
   "Not contacted": { fg: "#8a9290", bg: "#161c1a", dot: "#8a9290" },
-  "Messaged": { fg: "#ffb000", bg: "#1f1a0a", dot: "#ffb000" },
-  "Replied": { fg: "#5ec8d8", bg: "#0a1a1d", dot: "#5ec8d8" },
+  "Messaged": { fg: BRAND.gold, bg: "#1f1a0a", dot: BRAND.gold },
+  "Replied": { fg: BRAND.blue, bg: "#0a1420", dot: BRAND.blue },
   "Meeting set": { fg: "#7fe08a", bg: "#0c1a0e", dot: "#7fe08a" },
   "Interested": { fg: "#39ff88", bg: "#0a1f10", dot: "#39ff88" },
-  "Passed": { fg: "#ff6b5e", bg: "#1f0c0a", dot: "#ff6b5e" },
+  "Passed": { fg: "#ff7a6b", bg: "#1f0a0d", dot: BRAND.maroon },
 };
 
 const PLATFORM_ICON = {
@@ -29,9 +38,6 @@ const PLATFORM_ICON = {
   "Email": Mail,
   "Other": Link2,
 };
-
-const PIPELINE_KEY = "founder-contacts-v1";
-const DIRECTORY_KEY = "investor-directory-v1";
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
@@ -50,60 +56,18 @@ const emptyForm = () => ({
   notes: "",
 });
 
-// Seeded on first run only. Sophia and Kate from prior outreach drafts, plus a
-// short researched list of active pan-African investors compiled from public
-// sources (LinkedIn company pages, firm websites, Tracxn) — not scraped,
-// hand-verified names to research further and contact manually.
+// Seeded once per user, on first load only. Sophia and Kate from prior
+// outreach drafts, plus a short researched list of active pan-African
+// investors compiled from public sources — not scraped, hand-verified
+// names to research further and contact manually.
 const DEFAULT_CONTACTS = [
-  {
-    id: crypto.randomUUID(), name: "Sophia Amoruso", company: "Trust Fund", country: "United States",
-    platform: "Instagram", handle: "@sophiaamoruso", type: "Angel", stageFocus: "Pre-seed",
-    status: "Not contacted", lastContact: "", nextFollowUp: "",
-    notes: "Founder & investor at Trust Fund. Built Nasty Gal, invested in 45+ startups. Drafted intro DM.",
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: crypto.randomUUID(), name: "Kate McAndrew", company: "Baukunst", country: "United States",
-    platform: "Instagram", handle: "@kate__mcandrew", type: "Pre-seed VC", stageFocus: "Pre-seed",
-    status: "Not contacted", lastContact: "", nextFollowUp: "",
-    notes: "Pre-seed VC at Baukunst, $100M fund, SF, invests at frontier of tech + design. Prefers pitches by email: pitch@baukunst.co. Drafted pitch email.",
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: crypto.randomUUID(), name: "Mike Mompi", company: "Enza Capital", country: "Kenya",
-    platform: "LinkedIn", handle: "", type: "Seed VC", stageFocus: "Pre-seed",
-    status: "Not contacted", lastContact: "", nextFollowUp: "",
-    notes: "Co-founder & Managing Partner, Enza Capital (Nairobi). Multi-stage, pre-seed through Series B on first check. Fintech, logistics, health, human capital, climate-smart. Find LinkedIn handle before outreach.",
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: crypto.randomUUID(), name: "Lexi Novitske", company: "Norrsken22", country: "Nigeria",
-    platform: "LinkedIn", handle: "", type: "Series A+ VC", stageFocus: "Multi-stage",
-    status: "Not contacted", lastContact: "", nextFollowUp: "",
-    notes: "General Partner, Norrsken22 (Lagos). Prior: Acuity Venture Partners, Singularity Investments. Fintech & enterprise platforms across Africa. Find LinkedIn handle before outreach.",
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: crypto.randomUUID(), name: "Kola Aina", company: "Ventures Platform", country: "Nigeria",
-    platform: "LinkedIn", handle: "", type: "Seed VC", stageFocus: "Seed",
-    status: "Not contacted", lastContact: "", nextFollowUp: "",
-    notes: "Founding Partner, Ventures Platform Fund (Nigeria). Active early-stage pan-African investor. Find LinkedIn handle before outreach.",
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: crypto.randomUUID(), name: "Olumide Soyombo", company: "Voltron Capital", country: "Nigeria",
-    platform: "LinkedIn", handle: "", type: "Angel", stageFocus: "Pre-seed",
-    status: "Not contacted", lastContact: "", nextFollowUp: "",
-    notes: "Co-founder, Voltron Capital. Prominent Nigerian angel/early-stage investor. Find LinkedIn handle before outreach.",
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: crypto.randomUUID(), name: "Maya Horgan Famodu", company: "Ingressive Capital", country: "Nigeria",
-    platform: "LinkedIn", handle: "", type: "Seed VC", stageFocus: "Seed",
-    status: "Not contacted", lastContact: "", nextFollowUp: "",
-    notes: "Founder & Managing Partner, Ingressive Capital. Early-stage African tech investor. Find LinkedIn handle before outreach.",
-    createdAt: new Date().toISOString(),
-  },
+  { name: "Sophia Amoruso", company: "Trust Fund", country: "United States", platform: "Instagram", handle: "@sophiaamoruso", type: "Angel", stageFocus: "Pre-seed", status: "Not contacted", lastContact: "", nextFollowUp: "", notes: "Founder & investor at Trust Fund. Built Nasty Gal, invested in 45+ startups. Drafted intro DM." },
+  { name: "Kate McAndrew", company: "Baukunst", country: "United States", platform: "Instagram", handle: "@kate__mcandrew", type: "Pre-seed VC", stageFocus: "Pre-seed", status: "Not contacted", lastContact: "", nextFollowUp: "", notes: "Pre-seed VC at Baukunst, $100M fund, SF, invests at frontier of tech + design. Prefers pitches by email: pitch@baukunst.co. Drafted pitch email." },
+  { name: "Mike Mompi", company: "Enza Capital", country: "Kenya", platform: "LinkedIn", handle: "", type: "Seed VC", stageFocus: "Pre-seed", status: "Not contacted", lastContact: "", nextFollowUp: "", notes: "Co-founder & Managing Partner, Enza Capital (Nairobi). Pre-seed through Series B. Fintech, logistics, health, human capital, climate-smart. Find LinkedIn handle before outreach." },
+  { name: "Lexi Novitske", company: "Norrsken22", country: "Nigeria", platform: "LinkedIn", handle: "", type: "Series A+ VC", stageFocus: "Multi-stage", status: "Not contacted", lastContact: "", nextFollowUp: "", notes: "General Partner, Norrsken22 (Lagos). Fintech & enterprise platforms across Africa. Find LinkedIn handle before outreach." },
+  { name: "Kola Aina", company: "Ventures Platform", country: "Nigeria", platform: "LinkedIn", handle: "", type: "Seed VC", stageFocus: "Seed", status: "Not contacted", lastContact: "", nextFollowUp: "", notes: "Founding Partner, Ventures Platform Fund (Nigeria). Active early-stage pan-African investor. Find LinkedIn handle before outreach." },
+  { name: "Olumide Soyombo", company: "Voltron Capital", country: "Nigeria", platform: "LinkedIn", handle: "", type: "Angel", stageFocus: "Pre-seed", status: "Not contacted", lastContact: "", nextFollowUp: "", notes: "Co-founder, Voltron Capital. Prominent Nigerian angel/early-stage investor. Find LinkedIn handle before outreach." },
+  { name: "Maya Horgan Famodu", company: "Ingressive Capital", country: "Nigeria", platform: "LinkedIn", handle: "", type: "Seed VC", stageFocus: "Seed", status: "Not contacted", lastContact: "", nextFollowUp: "", notes: "Founder & Managing Partner, Ingressive Capital. Early-stage African tech investor. Find LinkedIn handle before outreach." },
 ];
 
 // ---------- small UI atoms ----------
@@ -115,9 +79,9 @@ function Chip({ active, onClick, children }) {
       className="px-2.5 py-1 text-[11px] tracking-wide uppercase whitespace-nowrap border transition-colors"
       style={{
         fontFamily: "'JetBrains Mono', monospace",
-        borderColor: active ? "#ffb000" : "#2a3330",
-        color: active ? "#ffb000" : "#8a9290",
-        background: active ? "#1f1a0a" : "transparent",
+        borderColor: active ? BRAND.blue : "#2a3330",
+        color: active ? BRAND.blue : "#8a9290",
+        background: active ? "#0a1420" : "transparent",
       }}
     >
       {children}
@@ -160,6 +124,7 @@ const inputStyle = { borderColor: "#2a3330", color: "#e8e6d9" };
 
 export default function OutreachTerminal() {
   const [tab, setTab] = useState("pipeline"); // "pipeline" | "directory"
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // pipeline state
   const [contacts, setContacts] = useState([]);
@@ -182,10 +147,14 @@ export default function OutreachTerminal() {
   );
 
   // directory state
+  const [batches, setBatches] = useState([]);
+  const [selectedBatchIds, setSelectedBatchIds] = useState([]); // empty = all
   const [directory, setDirectory] = useState([]);
   const [loadingDirectory, setLoadingDirectory] = useState(true);
   const [directoryError, setDirectoryError] = useState(null);
   const [importing, setImporting] = useState(false);
+  const [pendingImport, setPendingImport] = useState(null); // { fileName, records }
+  const [batchNameDraft, setBatchNameDraft] = useState("");
   const [dirSearch, setDirSearch] = useState("");
   const [dirStage, setDirStage] = useState("All");
   const [dirCountry, setDirCountry] = useState("");
@@ -199,71 +168,57 @@ export default function OutreachTerminal() {
     return () => clearInterval(t);
   }, []);
 
-  // ----- load pipeline -----
+  // ----- load pipeline (seed once per user if empty) -----
   useEffect(() => {
     (async () => {
       try {
-        const res = await window.storage.get(PIPELINE_KEY, false);
-        if (res && res.value) setContacts(JSON.parse(res.value));
-        else {
-          setContacts(DEFAULT_CONTACTS);
-          await window.storage.set(PIPELINE_KEY, JSON.stringify(DEFAULT_CONTACTS), false);
+        let rows = await db.fetchContacts();
+        if (rows.length === 0 && !(await db.hasSeeded())) {
+          await db.insertContacts(DEFAULT_CONTACTS);
+          await db.markSeeded();
+          rows = await db.fetchContacts();
         }
+        setContacts(rows);
       } catch (e) {
-        try {
-          setContacts(DEFAULT_CONTACTS);
-          await window.storage.set(PIPELINE_KEY, JSON.stringify(DEFAULT_CONTACTS), false);
-        } catch (e2) {
-          setPipelineError("Could not load or initialize saved data.");
-        }
+        setPipelineError(e.message || "Could not load your pipeline.");
       } finally {
         setLoadingPipeline(false);
       }
     })();
   }, []);
 
-  // ----- load directory -----
+  // ----- load directory batches, then investors for the current selection -----
   useEffect(() => {
     (async () => {
       try {
-        const res = await window.storage.get(DIRECTORY_KEY, false);
-        if (res && res.value) setDirectory(JSON.parse(res.value));
+        const b = await db.fetchBatches();
+        setBatches(b);
       } catch (e) {
-        // no directory imported yet — that's fine
+        setDirectoryError(e.message || "Could not load your directory.");
       } finally {
         setLoadingDirectory(false);
       }
     })();
   }, []);
 
-  async function persistPipeline(next) {
-    setContacts(next);
-    try {
-      const res = await window.storage.set(PIPELINE_KEY, JSON.stringify(next), false);
-      if (!res) setPipelineError("Save failed — your changes may not persist.");
-      else setPipelineError(null);
-    } catch (e) {
-      setPipelineError("Save failed — your changes may not persist.");
-    }
-  }
-
-  async function persistDirectory(next) {
-    setDirectory(next);
-    try {
-      const res = await window.storage.set(DIRECTORY_KEY, JSON.stringify(next), false);
-      if (!res) setDirectoryError("Save failed — the directory may not persist.");
-      else setDirectoryError(null);
-    } catch (e) {
-      setDirectoryError("Save failed — the directory may not persist.");
-    }
-  }
+  useEffect(() => {
+    if (loadingDirectory) return;
+    (async () => {
+      try {
+        const rows = await db.fetchInvestors(selectedBatchIds.length ? selectedBatchIds : null);
+        setDirectory(rows);
+      } catch (e) {
+        setDirectoryError(e.message || "Could not load directory rows.");
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBatchIds, batches.length]);
 
   function isOverdue(c) {
     if (!c.nextFollowUp) return false;
     if (["Meeting set", "Passed"].includes(c.status)) return false;
     return c.nextFollowUp < todayStr();
   }
-
   function isDueToday(c) {
     return c.nextFollowUp === todayStr() && !["Meeting set", "Passed"].includes(c.status);
   }
@@ -276,10 +231,7 @@ export default function OutreachTerminal() {
     return { total, active, overdue, replied };
   }, [contacts]);
 
-  const tickerItems = useMemo(
-    () => contacts.filter((c) => isOverdue(c) || isDueToday(c)),
-    [contacts]
-  );
+  const tickerItems = useMemo(() => contacts.filter((c) => isOverdue(c) || isDueToday(c)), [contacts]);
 
   const countryOptions = useMemo(() => {
     const set = new Set(contacts.map((c) => c.country).filter(Boolean));
@@ -308,49 +260,66 @@ export default function OutreachTerminal() {
         const ao = isOverdue(a) ? 0 : isDueToday(a) ? 1 : 2;
         const bo = isOverdue(b) ? 0 : isDueToday(b) ? 1 : 2;
         if (ao !== bo) return ao - bo;
-        const av = a.nextFollowUp || "9999";
-        const bv = b.nextFollowUp || "9999";
-        return av.localeCompare(bv);
+        return (a.nextFollowUp || "9999").localeCompare(b.nextFollowUp || "9999");
       });
   }, [contacts, fType, fStage, fStatus, fPlatform, fCountry, overdueOnly, search]);
 
-  function openAdd() {
-    setForm(emptyForm());
-    setModalOpen(true);
-  }
-  function openEdit(c) {
-    setForm(c);
-    setModalOpen(true);
-  }
-  function saveForm() {
+  function openAdd() { setForm(emptyForm()); setModalOpen(true); }
+  function openEdit(c) { setForm(c); setModalOpen(true); }
+
+  async function saveForm() {
     if (!form.name.trim()) return;
-    if (form.id) persistPipeline(contacts.map((c) => (c.id === form.id ? form : c)));
-    else persistPipeline([...contacts, { ...form, id: crypto.randomUUID(), createdAt: new Date().toISOString() }]);
-    setModalOpen(false);
+    try {
+      if (form.id) {
+        await db.updateContact(form);
+        setContacts(contacts.map((c) => (c.id === form.id ? form : c)));
+      } else {
+        const created = await db.insertContact(form);
+        setContacts([...contacts, created]);
+      }
+      setPipelineError(null);
+      setModalOpen(false);
+    } catch (e) {
+      setPipelineError(e.message || "Save failed.");
+    }
   }
-  function removeContact(id) {
-    persistPipeline(contacts.filter((c) => c.id !== id));
+
+  async function removeContact(id) {
+    try {
+      await db.deleteContactRow(id);
+      setContacts(contacts.filter((c) => c.id !== id));
+      setPipelineError(null);
+    } catch (e) {
+      setPipelineError(e.message || "Delete failed.");
+    }
   }
-  function markContactedToday(c) {
-    persistPipeline(
-      contacts.map((x) =>
-        x.id === c.id
-          ? { ...x, lastContact: todayStr(), status: x.status === "Not contacted" ? "Messaged" : x.status }
-          : x
-      )
-    );
+
+  async function markContactedToday(c) {
+    const updated = { ...c, lastContact: todayStr(), status: c.status === "Not contacted" ? "Messaged" : c.status };
+    try {
+      await db.updateContact(updated);
+      setContacts(contacts.map((x) => (x.id === c.id ? updated : x)));
+    } catch (e) {
+      setPipelineError(e.message || "Update failed.");
+    }
   }
-  function snooze(c, days) {
+
+  async function snooze(c, days) {
     const d = new Date();
     d.setDate(d.getDate() + days);
-    persistPipeline(contacts.map((x) => (x.id === c.id ? { ...x, nextFollowUp: d.toISOString().slice(0, 10) } : x)));
+    const updated = { ...c, nextFollowUp: d.toISOString().slice(0, 10) };
+    try {
+      await db.updateContact(updated);
+      setContacts(contacts.map((x) => (x.id === c.id ? updated : x)));
+    } catch (e) {
+      setPipelineError(e.message || "Update failed.");
+    }
   }
 
   // ----- directory: import -----
   async function handleFile(e) {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
-    setImporting(true);
     setDirectoryError(null);
     try {
       const buf = await file.arrayBuffer();
@@ -364,7 +333,6 @@ export default function OutreachTerminal() {
           if (!name) return null;
           const desc = String(r.Description || "").trim();
           return {
-            id: crypto.randomUUID(),
             name,
             rawType: String(r.Type || "").trim(),
             city: String(r.City || "").trim(),
@@ -382,30 +350,55 @@ export default function OutreachTerminal() {
         })
         .filter(Boolean);
 
-      await persistDirectory(records);
+      const defaultName = file.name.replace(/\.(xlsx|xls|csv)$/i, "");
+      setBatchNameDraft(defaultName);
+      setPendingImport({ fileName: file.name, records });
     } catch (err) {
-      setDirectoryError("Could not read that file — make sure it's a .xlsx or .csv export with the expected columns.");
+      setDirectoryError("Could not read that file — make sure it's a .xlsx, .xls or .csv export with the expected columns.");
     } finally {
-      setImporting(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   }
 
-  function clearDirectory() {
-    persistDirectory([]);
+  async function confirmImport() {
+    if (!pendingImport) return;
+    setImporting(true);
+    setDirectoryError(null);
+    try {
+      const name = batchNameDraft.trim() || pendingImport.fileName;
+      const batch = await db.importBatch(name, pendingImport.records);
+      setBatches([batch, ...batches]);
+      setSelectedBatchIds([batch.id]);
+      setPendingImport(null);
+    } catch (e) {
+      setDirectoryError(e.message || "Import failed.");
+    } finally {
+      setImporting(false);
+    }
   }
 
-  function addToPipeline(rec) {
-    const stageGuess =
-      ["Pre-Seed", "Seed", "Series A", "Growth"].find((s) => rec.stages.includes(s)) || "N/A";
-    const typeGuess = /vc|ventures|capital|partners|fund/i.test(rec.rawType + rec.name)
-      ? "Seed VC"
-      : "Angel";
+  async function removeBatch(id) {
+    try {
+      await db.deleteBatch(id);
+      const next = batches.filter((b) => b.id !== id);
+      setBatches(next);
+      setSelectedBatchIds(selectedBatchIds.filter((x) => x !== id));
+    } catch (e) {
+      setDirectoryError(e.message || "Delete failed.");
+    }
+  }
+
+  function toggleBatch(id) {
+    setSelectedBatchIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
+
+  async function addToPipeline(rec) {
+    const stageGuess = ["Pre-Seed", "Seed", "Series A", "Growth"].find((s) => rec.stages.includes(s)) || "N/A";
+    const typeGuess = /vc|ventures|capital|partners|fund/i.test(rec.rawType + rec.name) ? "Seed VC" : "Angel";
     const platformGuess = rec.linkedin ? "LinkedIn" : rec.email ? "Email" : "Other";
     const handleGuess = rec.linkedin || rec.email || rec.website;
 
     const newContact = {
-      id: crypto.randomUUID(),
       name: rec.name,
       company: rec.rawType === "Angel Investor" ? "" : rec.rawType,
       country: rec.country,
@@ -418,16 +411,18 @@ export default function OutreachTerminal() {
       nextFollowUp: "",
       notes: [
         rec.industryFocus ? `Focus: ${rec.industryFocus}` : "",
-        rec.minInvestment || rec.maxInvestment
-          ? `Check size: $${rec.minInvestment.toLocaleString()}–$${rec.maxInvestment.toLocaleString()}`
-          : "",
+        rec.minInvestment || rec.maxInvestment ? `Check size: $${rec.minInvestment.toLocaleString()}–$${rec.maxInvestment.toLocaleString()}` : "",
         rec.notes,
       ].filter(Boolean).join(" · "),
-      createdAt: new Date().toISOString(),
     };
-    persistPipeline([...contacts, newContact]);
-    setAddedFlash(rec.id);
-    setTimeout(() => setAddedFlash(null), 1500);
+    try {
+      const created = await db.insertContact(newContact);
+      setContacts((prev) => [...prev, created]);
+      setAddedFlash(rec.id);
+      setTimeout(() => setAddedFlash(null), 1500);
+    } catch (e) {
+      setDirectoryError(e.message || "Could not add to pipeline.");
+    }
   }
 
   const directoryFiltered = useMemo(() => {
@@ -452,7 +447,7 @@ export default function OutreachTerminal() {
           r.country.toLowerCase().includes(q)
         );
       })
-      .slice(0, 300); // render cap for performance; filters narrow the rest
+      .slice(0, 300);
   }, [directory, dirStage, dirCountry, dirIndustry, dirCheckSize, dirSearch]);
 
   const clockStr = now.toTimeString().slice(0, 5);
@@ -469,28 +464,37 @@ export default function OutreachTerminal() {
         select { background: #0f1512; }
         ::-webkit-scrollbar { width: 8px; height: 8px; }
         ::-webkit-scrollbar-thumb { background: #2a3330; }
-        @keyframes flash-in { 0% { background: #1f1a0a; } 100% { background: transparent; } }
+        @keyframes flash-in { 0% { background: #0a1420; } 100% { background: transparent; } }
         .flash { animation: flash-in 1.4s ease-out; }
       `}</style>
 
       {/* top bar */}
       <div className="border-b" style={{ borderColor: "#1c2422" }}>
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between flex-wrap gap-2">
-          <div className="flex items-center gap-3">
-            <span className="w-2 h-2 rounded-full" style={{ background: "#39ff88" }} />
-            <h1 className="mono text-sm tracking-[0.2em] uppercase">Outreach Terminal</h1>
-          </div>
-          <div className="mono text-xs flex items-center gap-4" style={{ color: "#8a9290" }}>
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-2">
+          <img src="/logo.jpg" alt="Suckmill" style={{ height: 40, width: "auto" }} />
+          <div className="hidden sm:flex mono text-xs items-center gap-4" style={{ color: "#8a9290" }}>
             <span>{clockStr}</span>
             <span>|</span>
             <span>TRACKED <b style={{ color: "#e8e6d9" }}>{stats.total}</b></span>
             <span>ACTIVE <b style={{ color: "#7fe08a" }}>{stats.active}</b></span>
-            <span>REPLIED <b style={{ color: "#5ec8d8" }}>{stats.replied}</b></span>
-            <span>OVERDUE <b style={{ color: stats.overdue ? "#ff6b5e" : "#8a9290" }}>{stats.overdue}</b></span>
+            <span>REPLIED <b style={{ color: BRAND.blue }}>{stats.replied}</b></span>
+            <span>OVERDUE <b style={{ color: stats.overdue ? "#ff7a6b" : "#8a9290" }}>{stats.overdue}</b></span>
           </div>
+          <button className="sm:hidden p-1.5" onClick={() => setMobileMenuOpen((v) => !v)} style={{ color: "#8a9290" }}>
+            <Menu size={20} />
+          </button>
         </div>
+        {mobileMenuOpen && (
+          <div className="sm:hidden max-w-6xl mx-auto px-4 pb-3 mono text-xs flex flex-wrap gap-x-4 gap-y-1" style={{ color: "#8a9290" }}>
+            <span>{clockStr}</span>
+            <span>TRACKED <b style={{ color: "#e8e6d9" }}>{stats.total}</b></span>
+            <span>ACTIVE <b style={{ color: "#7fe08a" }}>{stats.active}</b></span>
+            <span>REPLIED <b style={{ color: BRAND.blue }}>{stats.replied}</b></span>
+            <span>OVERDUE <b style={{ color: stats.overdue ? "#ff7a6b" : "#8a9290" }}>{stats.overdue}</b></span>
+          </div>
+        )}
         {/* menu / tabs */}
-        <div className="max-w-6xl mx-auto px-4 flex gap-1 -mb-px">
+        <div className="max-w-6xl mx-auto px-4 flex gap-1 -mb-px overflow-x-auto">
           {[
             { id: "pipeline", label: "Pipeline" },
             { id: "directory", label: `Investor Directory${directory.length ? ` (${directory.length})` : ""}` },
@@ -498,11 +502,8 @@ export default function OutreachTerminal() {
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
-              className="mono text-[11px] uppercase tracking-widest px-3 py-2 border-b-2"
-              style={{
-                borderColor: tab === t.id ? "#ffb000" : "transparent",
-                color: tab === t.id ? "#ffb000" : "#8a9290",
-              }}
+              className="mono text-[11px] uppercase tracking-widest px-3 py-2 border-b-2 whitespace-nowrap"
+              style={{ borderColor: tab === t.id ? BRAND.blue : "transparent", color: tab === t.id ? BRAND.blue : "#8a9290" }}
             >
               {t.label}
             </button>
@@ -510,7 +511,7 @@ export default function OutreachTerminal() {
         </div>
       </div>
 
-      {/* ticker (pipeline follow-ups) */}
+      {/* ticker */}
       <div className={"overflow-hidden border-b " + (reduceMotion.current ? "no-motion" : "")} style={{ borderColor: "#1c2422", background: "#0d1210" }}>
         <div className="py-1.5 whitespace-nowrap">
           {tickerItems.length === 0 ? (
@@ -518,7 +519,7 @@ export default function OutreachTerminal() {
           ) : (
             <div className="ticker-track inline-flex">
               {[...tickerItems, ...tickerItems].map((c, i) => (
-                <span key={i} className="mono text-[11px] px-4 inline-flex items-center gap-1.5" style={{ color: isOverdue(c) ? "#ff6b5e" : "#ffb000" }}>
+                <span key={i} className="mono text-[11px] px-4 inline-flex items-center gap-1.5" style={{ color: isOverdue(c) ? "#ff7a6b" : BRAND.gold }}>
                   <AlertTriangle size={11} />
                   {c.name} · {c.nextFollowUp} · follow up
                 </span>
@@ -556,7 +557,16 @@ export default function OutreachTerminal() {
             importing={importing}
             fileInputRef={fileInputRef}
             handleFile={handleFile}
-            clearDirectory={clearDirectory}
+            pendingImport={pendingImport}
+            batchNameDraft={batchNameDraft}
+            setBatchNameDraft={setBatchNameDraft}
+            confirmImport={confirmImport}
+            cancelImport={() => setPendingImport(null)}
+            batches={batches}
+            selectedBatchIds={selectedBatchIds}
+            toggleBatch={toggleBatch}
+            clearSelection={() => setSelectedBatchIds([])}
+            removeBatch={removeBatch}
             directory={directory}
             loading={loadingDirectory}
             dirSearch={dirSearch} setDirSearch={setDirSearch}
@@ -590,22 +600,14 @@ function PipelineTab(props) {
 
   return (
     <>
-      {error && (
-        <div className="mono text-xs mb-4 px-3 py-2 border" style={{ borderColor: "#ff6b5e", color: "#ff6b5e" }}>{error}</div>
-      )}
+      {error && <div className="mono text-xs mb-4 px-3 py-2 border" style={{ borderColor: BRAND.maroon, color: "#ff7a6b" }}>{error}</div>}
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <div className="flex items-center gap-2 px-2.5 py-1.5 border flex-1 min-w-[200px]" style={{ borderColor: "#2a3330" }}>
           <Search size={14} color="#8a9290" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="search name, company, notes..."
-            className="bg-transparent outline-none text-sm flex-1"
-            style={{ color: "#e8e6d9" }}
-          />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="search name, company, notes..." className="bg-transparent outline-none text-sm flex-1 min-w-0" style={{ color: "#e8e6d9" }} />
         </div>
-        <button onClick={openAdd} className="mono text-xs uppercase tracking-wide px-3 py-2 flex items-center gap-1.5" style={{ background: "#ffb000", color: "#0a0e0c" }}>
+        <button onClick={openAdd} className="mono text-xs uppercase tracking-wide px-3 py-2 flex items-center gap-1.5 shrink-0" style={{ background: BRAND.blue, color: "#fff" }}>
           <Plus size={14} /> Add contact
         </button>
       </div>
@@ -623,12 +625,8 @@ function PipelineTab(props) {
         <div className="mono text-sm" style={{ color: "#8a9290" }}>loading...</div>
       ) : filtered.length === 0 ? (
         <div className="border py-14 text-center" style={{ borderColor: "#1c2422" }}>
-          <p className="mono text-sm mb-1" style={{ color: "#8a9290" }}>
-            {contactsLength === 0 ? "no contacts tracked yet" : "nothing matches these filters"}
-          </p>
-          <p className="text-sm" style={{ color: "#4d5652" }}>
-            {contactsLength === 0 ? "add the first founder or investor to start your pipeline" : "try clearing a filter"}
-          </p>
+          <p className="mono text-sm mb-1" style={{ color: "#8a9290" }}>{contactsLength === 0 ? "no contacts tracked yet" : "nothing matches these filters"}</p>
+          <p className="text-sm" style={{ color: "#4d5652" }}>{contactsLength === 0 ? "add the first founder or investor to start your pipeline" : "try clearing a filter"}</p>
         </div>
       ) : (
         <div className="border-t" style={{ borderColor: "#1c2422" }}>
@@ -642,30 +640,26 @@ function PipelineTab(props) {
                   <Icon size={14} color="#8a9290" />
                   <div>
                     <div className="text-sm font-medium">{c.name}</div>
-                    <div className="mono text-[11px]" style={{ color: "#8a9290" }}>
-                      {c.company ? c.company + " · " : ""}{c.handle || "no handle yet"}
-                    </div>
+                    <div className="mono text-[11px]" style={{ color: "#8a9290" }}>{c.company ? c.company + " · " : ""}{c.handle || "no handle yet"}</div>
                   </div>
                 </div>
                 <span className="mono text-[10px] uppercase px-2 py-0.5 border" style={{ borderColor: "#2a3330", color: "#8a9290" }}>{c.type}</span>
                 <span className="mono text-[10px] uppercase px-2 py-0.5 border" style={{ borderColor: "#2a3330", color: "#8a9290" }}>{c.stageFocus}</span>
                 {c.country && <span className="mono text-[10px] uppercase px-2 py-0.5 border" style={{ borderColor: "#2a3330", color: "#8a9290" }}>{c.country}</span>}
                 <StatusBadge status={c.status} />
-                <div className="mono text-[11px]" style={{ color: overdue ? "#ff6b5e" : dueToday ? "#ffb000" : "#8a9290" }}>
-                  {c.nextFollowUp ? `next: ${c.nextFollowUp}` : "no follow-up set"}
-                  {overdue && " (overdue)"}
-                  {dueToday && " (today)"}
+                <div className="mono text-[11px]" style={{ color: overdue ? "#ff7a6b" : dueToday ? BRAND.gold : "#8a9290" }}>
+                  {c.nextFollowUp ? `next: ${c.nextFollowUp}` : "no follow-up set"}{overdue && " (overdue)"}{dueToday && " (today)"}
                 </div>
                 {c.notes && (
                   <div className="text-xs italic flex-1 min-w-[140px]" style={{ color: "#6b756f" }} title={c.notes}>
                     {c.notes.length > 60 ? c.notes.slice(0, 60) + "…" : c.notes}
                   </div>
                 )}
-                <div className="flex items-center gap-1 ml-auto">
+                <div className="flex items-center gap-1 w-full sm:w-auto sm:ml-auto justify-end">
                   <button onClick={() => markContactedToday(c)} title="Mark contacted today" className="p-1.5 border" style={{ borderColor: "#2a3330", color: "#7fe08a" }}><Check size={13} /></button>
-                  <button onClick={() => snooze(c, 7)} title="Follow up in 7 days" className="p-1.5 border" style={{ borderColor: "#2a3330", color: "#ffb000" }}><Clock size={13} /></button>
+                  <button onClick={() => snooze(c, 7)} title="Follow up in 7 days" className="p-1.5 border" style={{ borderColor: "#2a3330", color: BRAND.gold }}><Clock size={13} /></button>
                   <button onClick={() => openEdit(c)} title="Edit" className="p-1.5 border" style={{ borderColor: "#2a3330", color: "#8a9290" }}><Pencil size={13} /></button>
-                  <button onClick={() => removeContact(c.id)} title="Delete" className="p-1.5 border" style={{ borderColor: "#2a3330", color: "#ff6b5e" }}><Trash2 size={13} /></button>
+                  <button onClick={() => removeContact(c.id)} title="Delete" className="p-1.5 border" style={{ borderColor: "#2a3330", color: "#ff7a6b" }}><Trash2 size={13} /></button>
                 </div>
               </div>
             );
@@ -681,9 +675,7 @@ function FilterRow({ label, value, setValue, options }) {
     <div className="flex flex-wrap gap-1.5 mb-2">
       <span className="mono text-[10px] uppercase self-center mr-1" style={{ color: "#4d5652" }}>{label}</span>
       <Chip active={value === "All"} onClick={() => setValue("All")}>All</Chip>
-      {options.map((o) => (
-        <Chip key={o} active={value === o} onClick={() => setValue(o)}>{o}</Chip>
-      ))}
+      {options.map((o) => <Chip key={o} active={value === o} onClick={() => setValue(o)}>{o}</Chip>)}
     </div>
   );
 }
@@ -692,42 +684,66 @@ function FilterRow({ label, value, setValue, options }) {
 
 function DirectoryTab(props) {
   const {
-    error, importing, fileInputRef, handleFile, clearDirectory, directory, loading,
-    dirSearch, setDirSearch, dirStage, setDirStage, dirCountry, setDirCountry,
-    dirIndustry, setDirIndustry, dirCheckSize, setDirCheckSize, directoryFiltered,
-    addToPipeline, addedFlash,
+    error, importing, fileInputRef, handleFile, pendingImport, batchNameDraft, setBatchNameDraft,
+    confirmImport, cancelImport, batches, selectedBatchIds, toggleBatch, clearSelection, removeBatch,
+    directory, loading, dirSearch, setDirSearch, dirStage, setDirStage, dirCountry, setDirCountry,
+    dirIndustry, setDirIndustry, dirCheckSize, setDirCheckSize, directoryFiltered, addToPipeline, addedFlash,
   } = props;
 
   return (
     <>
       <div className="mb-4 border p-3" style={{ borderColor: "#1c2422", background: "#0d1210" }}>
         <p className="text-sm mb-2" style={{ color: "#8a9290" }}>
-          Import a spreadsheet of investors (.xlsx or .csv) — expects columns like{" "}
+          Import a spreadsheet of investors (.xlsx, .xls or .csv) — expects columns like{" "}
           <span className="mono text-[11px]">Investor, Type, Country, Website, LinkedIn, ContactEmail, Stages, IndustryFocus, GeographicalFocus, MinInvestmentSize, MaxInvestmentSize</span>.
-          Parsing happens in your browser — the file isn't sent anywhere else.
+          Each import is saved as its own named batch — nothing gets overwritten.
         </p>
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={() => fileInputRef.current && fileInputRef.current.click()}
-            disabled={importing}
-            className="mono text-xs uppercase tracking-wide px-3 py-2 flex items-center gap-1.5"
-            style={{ background: "#ffb000", color: "#0a0e0c" }}
-          >
-            <Upload size={14} /> {importing ? "Importing..." : "Import spreadsheet"}
+        {!pendingImport ? (
+          <button onClick={() => fileInputRef.current && fileInputRef.current.click()} className="mono text-xs uppercase tracking-wide px-3 py-2 flex items-center gap-1.5" style={{ background: BRAND.blue, color: "#fff" }}>
+            <Upload size={14} /> Import spreadsheet
           </button>
-          <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} className="hidden" />
-          {directory.length > 0 && (
-            <button onClick={clearDirectory} className="mono text-xs uppercase px-3 py-2 border" style={{ borderColor: "#2a3330", color: "#ff6b5e" }}>
-              Clear directory ({directory.length})
+        ) : (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs" style={{ color: "#8a9290" }}>{pendingImport.records.length} rows found — save as:</span>
+            <input value={batchNameDraft} onChange={(e) => setBatchNameDraft(e.target.value)} className="bg-transparent border px-2 py-1.5 text-sm outline-none flex-1 min-w-[160px]" style={inputStyle} />
+            <button onClick={confirmImport} disabled={importing} className="mono text-xs uppercase px-3 py-1.5" style={{ background: BRAND.blue, color: "#fff" }}>
+              {importing ? "Importing..." : "Confirm import"}
             </button>
-          )}
-        </div>
-        {error && <div className="mono text-xs mt-2" style={{ color: "#ff6b5e" }}>{error}</div>}
+            <button onClick={cancelImport} className="mono text-xs uppercase px-3 py-1.5 border" style={{ borderColor: "#2a3330", color: "#8a9290" }}>Cancel</button>
+          </div>
+        )}
+        <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} className="hidden" />
+        {error && <div className="mono text-xs mt-2" style={{ color: "#ff7a6b" }}>{error}</div>}
       </div>
+
+      {batches.length > 0 && (
+        <div className="mb-4">
+          <div className="mono text-[10px] uppercase mb-1.5" style={{ color: "#4d5652" }}>
+            Imported batches — tap to filter, or leave none selected to see all
+          </div>
+          <div className="flex flex-wrap gap-1.5 items-center">
+            <Chip active={selectedBatchIds.length === 0} onClick={clearSelection}>All batches</Chip>
+            {batches.map((b) => (
+              <span key={b.id} className="inline-flex items-center border" style={{ borderColor: selectedBatchIds.includes(b.id) ? BRAND.blue : "#2a3330" }}>
+                <button
+                  onClick={() => toggleBatch(b.id)}
+                  className="px-2.5 py-1 text-[11px] mono uppercase whitespace-nowrap"
+                  style={{ color: selectedBatchIds.includes(b.id) ? BRAND.blue : "#8a9290", background: selectedBatchIds.includes(b.id) ? "#0a1420" : "transparent" }}
+                >
+                  {b.name} ({b.row_count})
+                </button>
+                <button onClick={() => removeBatch(b.id)} title="Delete this batch" className="px-1.5 py-1" style={{ color: "#8a9290" }}>
+                  <X size={12} />
+                </button>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="mono text-sm" style={{ color: "#8a9290" }}>loading...</div>
-      ) : directory.length === 0 ? (
+      ) : batches.length === 0 ? (
         <div className="border py-14 text-center" style={{ borderColor: "#1c2422" }}>
           <p className="mono text-sm mb-1" style={{ color: "#8a9290" }}>no directory imported yet</p>
           <p className="text-sm" style={{ color: "#4d5652" }}>import a spreadsheet above to build a searchable, filterable investor list</p>
@@ -737,22 +753,20 @@ function DirectoryTab(props) {
           <div className="flex flex-wrap items-center gap-2 mb-3">
             <div className="flex items-center gap-2 px-2.5 py-1.5 border flex-1 min-w-[180px]" style={{ borderColor: "#2a3330" }}>
               <Search size={14} color="#8a9290" />
-              <input value={dirSearch} onChange={(e) => setDirSearch(e.target.value)} placeholder="search name, industry, geography..." className="bg-transparent outline-none text-sm flex-1" style={{ color: "#e8e6d9" }} />
+              <input value={dirSearch} onChange={(e) => setDirSearch(e.target.value)} placeholder="search name, industry, geography..." className="bg-transparent outline-none text-sm flex-1 min-w-0" style={{ color: "#e8e6d9" }} />
             </div>
-            <input value={dirCountry} onChange={(e) => setDirCountry(e.target.value)} placeholder="country contains..." className="bg-transparent border px-2.5 py-1.5 text-sm outline-none w-40" style={inputStyle} />
-            <input value={dirIndustry} onChange={(e) => setDirIndustry(e.target.value)} placeholder="industry contains..." className="bg-transparent border px-2.5 py-1.5 text-sm outline-none w-40" style={inputStyle} />
-            <input value={dirCheckSize} onChange={(e) => setDirCheckSize(e.target.value)} type="number" placeholder="my check size ($)" className="bg-transparent border px-2.5 py-1.5 text-sm outline-none w-36" style={inputStyle} />
+            <input value={dirCountry} onChange={(e) => setDirCountry(e.target.value)} placeholder="country contains..." className="bg-transparent border px-2.5 py-1.5 text-sm outline-none w-full sm:w-40" style={inputStyle} />
+            <input value={dirIndustry} onChange={(e) => setDirIndustry(e.target.value)} placeholder="industry contains..." className="bg-transparent border px-2.5 py-1.5 text-sm outline-none w-full sm:w-40" style={inputStyle} />
+            <input value={dirCheckSize} onChange={(e) => setDirCheckSize(e.target.value)} type="number" placeholder="my check size ($)" className="bg-transparent border px-2.5 py-1.5 text-sm outline-none w-full sm:w-36" style={inputStyle} />
           </div>
           <div className="flex flex-wrap gap-1.5 mb-4">
             <span className="mono text-[10px] uppercase self-center mr-1" style={{ color: "#4d5652" }}>Stage</span>
             <Chip active={dirStage === "All"} onClick={() => setDirStage("All")}>All</Chip>
-            {DIR_STAGE_FILTERS.map((s) => (
-              <Chip key={s} active={dirStage === s} onClick={() => setDirStage(s)}>{s}</Chip>
-            ))}
+            {DIR_STAGE_FILTERS.map((s) => <Chip key={s} active={dirStage === s} onClick={() => setDirStage(s)}>{s}</Chip>)}
           </div>
 
           <div className="mono text-[11px] mb-2" style={{ color: "#4d5652" }}>
-            showing {directoryFiltered.length} of {directory.length} {directoryFiltered.length === 300 ? "(narrow filters to see more)" : ""}
+            showing {directoryFiltered.length} of {directory.length}{directoryFiltered.length === 300 ? " (narrow filters to see more)" : ""}
           </div>
 
           <div className="border-t" style={{ borderColor: "#1c2422" }}>
@@ -770,14 +784,10 @@ function DirectoryTab(props) {
                     ${r.minInvestment.toLocaleString()}–${r.maxInvestment.toLocaleString()}
                   </span>
                 ) : null}
-                <div className="flex items-center gap-1 ml-auto">
-                  {r.linkedin && (
-                    <a href={r.linkedin} target="_blank" rel="noreferrer" title="LinkedIn" className="p-1.5 border" style={{ borderColor: "#2a3330", color: "#5ec8d8" }}><Linkedin size={13} /></a>
-                  )}
-                  {r.website && (
-                    <a href={r.website} target="_blank" rel="noreferrer" title="Website" className="p-1.5 border" style={{ borderColor: "#2a3330", color: "#8a9290" }}><ExternalLink size={13} /></a>
-                  )}
-                  <button onClick={() => addToPipeline(r)} title="Add to pipeline" className="mono text-[10px] uppercase px-2 py-1.5 border flex items-center gap-1" style={{ borderColor: "#ffb000", color: "#ffb000" }}>
+                <div className="flex items-center gap-1 w-full sm:w-auto sm:ml-auto justify-end">
+                  {r.linkedin && <a href={r.linkedin} target="_blank" rel="noreferrer" title="LinkedIn" className="p-1.5 border" style={{ borderColor: "#2a3330", color: BRAND.blue }}><Linkedin size={13} /></a>}
+                  {r.website && <a href={r.website} target="_blank" rel="noreferrer" title="Website" className="p-1.5 border" style={{ borderColor: "#2a3330", color: "#8a9290" }}><ExternalLink size={13} /></a>}
+                  <button onClick={() => addToPipeline(r)} title="Add to pipeline" className="mono text-[10px] uppercase px-2 py-1.5 border flex items-center gap-1" style={{ borderColor: BRAND.blue, color: BRAND.blue }}>
                     <Plus size={12} /> Add
                   </button>
                 </div>
@@ -802,7 +812,7 @@ function ContactModal({ form, setForm, onClose, onSave, onDelete }) {
         </div>
 
         <div className="p-4 space-y-3">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Name">
               <input autoFocus value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full bg-transparent border px-2 py-1.5 text-sm outline-none" style={inputStyle} />
             </Field>
@@ -811,7 +821,7 @@ function ContactModal({ form, setForm, onClose, onSave, onDelete }) {
             </Field>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Platform">
               <select value={form.platform} onChange={(e) => setForm({ ...form, platform: e.target.value })} className="w-full border px-2 py-1.5 text-sm outline-none" style={inputStyle}>
                 {PLATFORMS.map((p) => <option key={p} value={p}>{p}</option>)}
@@ -822,7 +832,7 @@ function ContactModal({ form, setForm, onClose, onSave, onDelete }) {
             </Field>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Type">
               <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} className="w-full border px-2 py-1.5 text-sm outline-none" style={inputStyle}>
                 {TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
@@ -835,7 +845,7 @@ function ContactModal({ form, setForm, onClose, onSave, onDelete }) {
             </Field>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Status">
               <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="w-full border px-2 py-1.5 text-sm outline-none" style={inputStyle}>
                 {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -846,7 +856,7 @@ function ContactModal({ form, setForm, onClose, onSave, onDelete }) {
             </Field>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <Field label="Last contact">
               <input type="date" value={form.lastContact} onChange={(e) => setForm({ ...form, lastContact: e.target.value })} className="w-full bg-transparent border px-2 py-1.5 text-sm outline-none" style={inputStyle} />
             </Field>
@@ -862,13 +872,13 @@ function ContactModal({ form, setForm, onClose, onSave, onDelete }) {
 
         <div className="flex items-center justify-between px-4 py-3 border-t" style={{ borderColor: "#1c2422" }}>
           {form.id ? (
-            <button onClick={() => { onDelete(form.id); onClose(); }} className="mono text-xs uppercase flex items-center gap-1.5" style={{ color: "#ff6b5e" }}>
+            <button onClick={() => { onDelete(form.id); onClose(); }} className="mono text-xs uppercase flex items-center gap-1.5" style={{ color: "#ff7a6b" }}>
               <Trash2 size={13} /> Delete
             </button>
           ) : <span />}
           <div className="flex gap-2">
             <button onClick={onClose} className="mono text-xs uppercase px-3 py-1.5 border" style={{ borderColor: "#2a3330", color: "#8a9290" }}>Cancel</button>
-            <button onClick={onSave} disabled={!form.name.trim()} className="mono text-xs uppercase px-3 py-1.5" style={{ background: form.name.trim() ? "#ffb000" : "#3a3730", color: "#0a0e0c" }}>Save</button>
+            <button onClick={onSave} disabled={!form.name.trim()} className="mono text-xs uppercase px-3 py-1.5" style={{ background: form.name.trim() ? BRAND.blue : "#3a3730", color: "#fff" }}>Save</button>
           </div>
         </div>
       </div>
