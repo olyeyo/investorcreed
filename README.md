@@ -96,6 +96,31 @@ At your domain registrar, add the DNS record Vercel shows you:
 
 DNS can take minutes to hours to propagate.
 
+## 8. Set up email reminders (Resend)
+
+Marking a contact as contacted now sends you a reminder email at
+olyeyo3@gmail.com, via a Vercel serverless function (`api/send-notification.js`)
+— your Resend API key stays server-side and is never shipped to the browser.
+
+1. Get an API key at [resend.com](https://resend.com) → API Keys.
+2. In Vercel: Settings → Environment Variables → add `RESEND_API_KEY`
+   (**no** `VITE_` prefix — that prefix is what tells Vite to expose a
+   variable to the browser, which you don't want here).
+3. Redeploy.
+4. Note: `resend.dev` sender addresses only deliver to the email you signed
+   up to Resend with, until you verify your own sending domain. For anything
+   beyond testing, verify a domain in Resend and change the `from` address in
+   `api/send-notification.js`.
+5. Every send attempt (success or failure) is logged to the `email_log`
+   table — run `supabase/schema_v3_email_log.sql` to create it.
+6. Local testing: plain `npm run dev` (Vite) does **not** run `/api` routes.
+   Use `npx vercel dev` instead if you want to test the email locally.
+
+Tracking replies automatically (not just sends) would need real inbound email
+infrastructure — a verified domain plus a webhook parsing incoming mail. That's
+a bigger, separate setup; for now, replies are still tracked manually via the
+"Replied" status in your pipeline.
+
 ## Notes
 
 - `xlsx` (SheetJS) parsing still happens entirely in the browser — the

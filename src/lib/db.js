@@ -110,6 +110,21 @@ export async function markSeeded() {
   if (error) throw error;
 }
 
+// ---------- email notification log ----------
+
+export async function logEmailSent({ contactId, contactName, triggerType, sentOk, error }) {
+  const userId = await uid();
+  const { error: dbErr } = await supabase.from("email_log").insert({
+    user_id: userId,
+    contact_id: contactId || null,
+    contact_name: contactName,
+    trigger_type: triggerType,
+    sent_ok: sentOk,
+    error: error || null,
+  });
+  if (dbErr) throw dbErr;
+}
+
 // ---------- directory (batches + investor rows) ----------
 
 export async function fetchBatches() {

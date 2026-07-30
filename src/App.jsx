@@ -5,6 +5,7 @@ import {
   Mail, Link2, AlertTriangle, Clock, Check, Upload, ExternalLink, Menu,
 } from "lucide-react";
 import * as db from "./lib/db.js";
+import { sendContactNotification } from "./lib/notify.js";
 
 // ---------- brand ----------
 
@@ -40,6 +41,104 @@ const PLATFORM_ICON = {
 };
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
+
+// ---------- xlsx import helpers ----------
+// Real-world exports vary a lot: title rows above the real header, columns
+// named "Min Check" vs "MinInvestmentSize" vs "Check Size" (one combined
+// text field), "Base" vs "Country", etc. These helpers normalize all of that.
+
+function normalizeHeader(h) {
+  return String(h || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+const FIELD_KEYWORDS = {
+  name: ["investor", "name"],
+  rawType: ["type"],
+  country: ["country"],
+  city: ["base", "city"],
+  stages: ["stages", "stage"],
+  industryFocus: ["industryfocus", "industry", "sector"],
+  geoFocus: ["geographicalfocus", "geofocus"],
+  website: ["website"],
+  linkedin: ["linkedin"],
+  email: ["contactemail", "email"],
+  phone: ["contactphone", "phone"],
+  minInvestment: ["mininvestment", "mincheck", "minimumcheck"],
+  maxInvestment: ["maxinvestment", "maxcheck", "maximumcheck"],
+  checkSizeText: ["checksize"],
+  tier: ["tier"],
+  score: ["score"],
+  priority: ["priority"],
+  extraNotes: ["verificationnote", "howtoapproach", "fitfor", "notes", "description"],
+};
+
+function parseMoney(text) {
+  const matches = [...String(text).matchAll(/([\d,.]+)\s*(k|m)?/gi)].filter((m) => m[1] && m[1] !== ".");
+  return matches.map((m) => {
+    let n = parseFloat(m[1].replace(/,/g, ""));
+    if (/k/i.test(m[2])) n *= 1_000;
+    if (/m/i.test(m[2])) n *= 1_000_000;
+    return n;
+  });
+}
+
+// Finds the real header row (title/subtitle rows above it have far fewer
+// filled cells) and maps whatever columns exist to our canonical fields.
+function parseSheetRecords(workbook, sheetName) {
+  const raw = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: "" });
+  const headerIdx = raw.findIndex((row) => row.filter((c) => String(c).trim() !== "").length >= 3);
+  if (headerIdx === -1) return [];
+
+  const headers = raw[headerIdx].map(normalizeHeader);
+  const colIndex = {};
+  for (const [field, keywords] of Object.entries(FIELD_KEYWORDS)) {
+    const idx = headers.findIndex((h) => keywords.some((k) => h.includes(k)));
+    if (idx !== -1) colIndex[field] = idx;
+  }
+
+  const get = (row, field) => (field in colIndex ? String(row[colIndex[field]] ?? "").trim() : "");
+
+  return raw
+    .slice(headerIdx + 1)
+    .map((row) => {
+      const name = get(row, "name");
+      if (!name) return null;
+
+      let minInvestment = Number(get(row, "minInvestment").replace(/[^0-9.]/g, "")) || 0;
+      let maxInvestment = Number(get(row, "maxInvestment").replace(/[^0-9.]/g, "")) || 0;
+      const checkSizeText = get(row, "checkSizeText");
+      if (!minInvestment && !maxInvestment && checkSizeText) {
+        const nums = parseMoney(checkSizeText);
+        if (nums.length >= 2) { minInvestment = nums[0]; maxInvestment = nums[1]; }
+        else if (nums.length === 1) { minInvestment = nums[0]; maxInvestment = nums[0]; }
+      }
+
+      const notesParts = [
+        get(row, "tier") ? `Tier: ${get(row, "tier")}` : "",
+        get(row, "score") ? `Score: ${get(row, "score")}` : "",
+        get(row, "priority") ? `Priority: ${get(row, "priority")}` : "",
+        checkSizeText ? `Check size (as listed): ${checkSizeText}` : "",
+        get(row, "extraNotes"),
+      ].filter(Boolean).join(" · ");
+
+      return {
+        name,
+        rawType: get(row, "rawType"),
+        city: get(row, "city"),
+        country: get(row, "country"),
+        website: get(row, "website"),
+        linkedin: get(row, "linkedin"),
+        email: get(row, "email"),
+        stages: get(row, "stages"),
+        industryFocus: get(row, "industryFocus"),
+        geoFocus: get(row, "geoFocus"),
+        minInvestment,
+        maxInvestment,
+        notes: notesParts.length > 300 ? notesParts.slice(0, 300) + "…" : notesParts,
+      };
+    })
+    .filter(Boolean);
+}
 
 const emptyForm = () => ({
   id: null,
@@ -271,8 +370,12 @@ export default function OutreachTerminal() {
     if (!form.name.trim()) return;
     try {
       if (form.id) {
+        const prev = contacts.find((c) => c.id === form.id);
         await db.updateContact(form);
         setContacts(contacts.map((c) => (c.id === form.id ? form : c)));
+        if (prev && prev.status !== "Messaged" && form.status === "Messaged") {
+          notifyAndLog(form, "marked contacted");
+        }
       } else {
         const created = await db.insertContact(form);
         setContacts([...contacts, created]);
@@ -294,11 +397,27 @@ export default function OutreachTerminal() {
     }
   }
 
+  async function notifyAndLog(contact, actionLabel) {
+    const result = await sendContactNotification(contact.name, actionLabel, contact.notes);
+    try {
+      await db.logEmailSent({
+        contactId: contact.id,
+        contactName: contact.name,
+        triggerType: actionLabel,
+        sentOk: result.ok,
+        error: result.ok ? null : result.error,
+      });
+    } catch {
+      // logging the log entry failed — not worth surfacing over the actual action
+    }
+  }
+
   async function markContactedToday(c) {
     const updated = { ...c, lastContact: todayStr(), status: c.status === "Not contacted" ? "Messaged" : c.status };
     try {
       await db.updateContact(updated);
       setContacts(contacts.map((x) => (x.id === c.id ? updated : x)));
+      notifyAndLog(updated, "marked contacted");
     } catch (e) {
       setPipelineError(e.message || "Update failed.");
     }
@@ -316,7 +435,8 @@ export default function OutreachTerminal() {
     }
   }
 
-  // ----- directory: import -----
+  // ----- directory: import (handles multi-sheet workbooks, title rows above
+  // the real header, and differently-named columns across exports) -----
   async function handleFile(e) {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
@@ -324,40 +444,35 @@ export default function OutreachTerminal() {
     try {
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf, { type: "array" });
-      const sheet = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
 
-      const records = rows
-        .map((r) => {
-          const name = String(r.Investor || r.Name || "").trim();
-          if (!name) return null;
-          const desc = String(r.Description || "").trim();
-          return {
-            name,
-            rawType: String(r.Type || "").trim(),
-            city: String(r.City || "").trim(),
-            country: String(r.Country || "").trim(),
-            website: String(r.Website || "").trim(),
-            linkedin: String(r.LinkedIn || "").trim(),
-            email: String(r.ContactEmail || "").trim(),
-            stages: String(r.Stages || "").trim(),
-            industryFocus: String(r.IndustryFocus || "").trim(),
-            geoFocus: String(r.GeographicalFocus || "").trim(),
-            minInvestment: Number(r.MinInvestmentSize) || 0,
-            maxInvestment: Number(r.MaxInvestmentSize) || 0,
-            notes: desc.length > 240 ? desc.slice(0, 240) + "…" : desc,
-          };
-        })
-        .filter(Boolean);
+      const sheetInfo = wb.SheetNames.map((n) => {
+        const raw = XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, defval: "" });
+        return { name: n, rowCount: raw.length };
+      });
+      // Default to whichever sheet has the most rows — usually the full data
+      // sheet rather than a "Read Me" or a smaller priority-subset tab.
+      const best = sheetInfo.reduce((a, b) => (b.rowCount > a.rowCount ? b : a), sheetInfo[0]);
 
       const defaultName = file.name.replace(/\.(xlsx|xls|csv)$/i, "");
       setBatchNameDraft(defaultName);
-      setPendingImport({ fileName: file.name, records });
+      setPendingImport({
+        fileName: file.name,
+        workbook: wb,
+        sheets: sheetInfo,
+        activeSheet: best.name,
+        records: parseSheetRecords(wb, best.name),
+      });
     } catch (err) {
-      setDirectoryError("Could not read that file — make sure it's a .xlsx, .xls or .csv export with the expected columns.");
+      setDirectoryError("Could not read that file — make sure it's a .xlsx, .xls or .csv export.");
     } finally {
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
+  }
+
+  function switchImportSheet(sheetName) {
+    setPendingImport((prev) =>
+      prev ? { ...prev, activeSheet: sheetName, records: parseSheetRecords(prev.workbook, sheetName) } : prev
+    );
   }
 
   async function confirmImport() {
@@ -558,6 +673,7 @@ export default function OutreachTerminal() {
             fileInputRef={fileInputRef}
             handleFile={handleFile}
             pendingImport={pendingImport}
+            switchImportSheet={switchImportSheet}
             batchNameDraft={batchNameDraft}
             setBatchNameDraft={setBatchNameDraft}
             confirmImport={confirmImport}
@@ -684,7 +800,7 @@ function FilterRow({ label, value, setValue, options }) {
 
 function DirectoryTab(props) {
   const {
-    error, importing, fileInputRef, handleFile, pendingImport, batchNameDraft, setBatchNameDraft,
+    error, importing, fileInputRef, handleFile, pendingImport, switchImportSheet, batchNameDraft, setBatchNameDraft,
     confirmImport, cancelImport, batches, selectedBatchIds, toggleBatch, clearSelection, removeBatch,
     directory, loading, dirSearch, setDirSearch, dirStage, setDirStage, dirCountry, setDirCountry,
     dirIndustry, setDirIndustry, dirCheckSize, setDirCheckSize, directoryFiltered, addToPipeline, addedFlash,
@@ -703,13 +819,28 @@ function DirectoryTab(props) {
             <Upload size={14} /> Import spreadsheet
           </button>
         ) : (
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs" style={{ color: "#8a9290" }}>{pendingImport.records.length} rows found — save as:</span>
-            <input value={batchNameDraft} onChange={(e) => setBatchNameDraft(e.target.value)} className="bg-transparent border px-2 py-1.5 text-sm outline-none flex-1 min-w-[160px]" style={inputStyle} />
-            <button onClick={confirmImport} disabled={importing} className="mono text-xs uppercase px-3 py-1.5" style={{ background: BRAND.blue, color: "#fff" }}>
-              {importing ? "Importing..." : "Confirm import"}
-            </button>
-            <button onClick={cancelImport} className="mono text-xs uppercase px-3 py-1.5 border" style={{ borderColor: "#2a3330", color: "#8a9290" }}>Cancel</button>
+          <div>
+            {pendingImport.sheets && pendingImport.sheets.length > 1 && (
+              <div className="flex flex-wrap items-center gap-1.5 mb-2">
+                <span className="mono text-[10px] uppercase mr-1" style={{ color: "#4d5652" }}>Sheet:</span>
+                {pendingImport.sheets.map((s) => (
+                  <Chip key={s.name} active={pendingImport.activeSheet === s.name} onClick={() => switchImportSheet(s.name)}>
+                    {s.name} ({s.rowCount})
+                  </Chip>
+                ))}
+              </div>
+            )}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs" style={{ color: "#8a9290" }}>{pendingImport.records.length} rows found — save as:</span>
+              <input value={batchNameDraft} onChange={(e) => setBatchNameDraft(e.target.value)} className="bg-transparent border px-2 py-1.5 text-sm outline-none flex-1 min-w-[160px]" style={inputStyle} />
+              <button onClick={confirmImport} disabled={importing || pendingImport.records.length === 0} className="mono text-xs uppercase px-3 py-1.5" style={{ background: BRAND.blue, color: "#fff" }}>
+                {importing ? "Importing..." : "Confirm import"}
+              </button>
+              <button onClick={cancelImport} className="mono text-xs uppercase px-3 py-1.5 border" style={{ borderColor: "#2a3330", color: "#8a9290" }}>Cancel</button>
+            </div>
+            {pendingImport.records.length === 0 && (
+              <p className="text-xs mt-1" style={{ color: BRAND.gold }}>No rows detected on this sheet — try a different sheet above.</p>
+            )}
           </div>
         )}
         <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleFile} className="hidden" />
