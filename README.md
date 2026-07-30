@@ -103,4 +103,3 @@ DNS can take minutes to hours to propagate.
 - The pipeline still comes pre-seeded with Sophia Amoruso, Kate McAndrew, and
   five pan-African investors on first load — that's `DEFAULT_CONTACTS` in
   `src/App.jsx`.
-# investorcreed
