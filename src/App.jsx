@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import * as db from "./lib/db.js";
 import { sendContactNotification } from "./lib/notify.js";
+import OnePagerGenerator from "./OnePagerGenerator.jsx";
 
 // ---------- brand ----------
 
@@ -21,6 +22,7 @@ const PLATFORMS = ["Instagram", "LinkedIn", "Twitter/X", "Email", "Other"];
 const TYPES = ["Founder", "Angel", "Pre-seed VC", "Seed VC", "Series A+ VC", "Accelerator", "Other"];
 const STAGES = ["Pre-seed", "Seed", "Series A", "Growth", "Multi-stage", "N/A"];
 const STATUSES = ["Not contacted", "Messaged", "Replied", "Meeting set", "Interested", "Passed"];
+const COMMITMENT_STATUSES = ["None", "Soft commit", "Term sheet sent", "Signed", "Closed", "Declined"];
 const DIR_STAGE_FILTERS = ["Pre-Seed", "Seed", "Early Stage", "Series A", "Series B", "Growth", "Late Stage"];
 
 const STATUS_STYLE = {
@@ -41,6 +43,13 @@ const PLATFORM_ICON = {
 };
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
+
+function fmtMoney(n) {
+  const v = Number(n) || 0;
+  if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`;
+  if (v >= 1_000) return `$${(v / 1_000).toFixed(0)}K`;
+  return v ? `$${v}` : "$0";
+}
 
 // ---------- xlsx import helpers ----------
 // Real-world exports vary a lot: title rows above the real header, columns
@@ -153,6 +162,9 @@ const emptyForm = () => ({
   lastContact: "",
   nextFollowUp: "",
   notes: "",
+  commitmentStatus: "None",
+  commitmentAmount: "",
+  targetCloseDate: "",
 });
 
 // Seeded once per user, on first load only. Sophia and Kate from prior
@@ -235,6 +247,7 @@ export default function OutreachTerminal() {
   const [fStatus, setFStatus] = useState("All");
   const [fPlatform, setFPlatform] = useState("All");
   const [fCountry, setFCountry] = useState("All");
+  const [fCommitment, setFCommitment] = useState("All");
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState(emptyForm());
@@ -327,7 +340,10 @@ export default function OutreachTerminal() {
     const active = contacts.filter((c) => c.status !== "Passed").length;
     const overdue = contacts.filter(isOverdue).length;
     const replied = contacts.filter((c) => ["Replied", "Meeting set", "Interested"].includes(c.status)).length;
-    return { total, active, overdue, replied };
+    const committed = contacts
+      .filter((c) => ["Signed", "Closed"].includes(c.commitmentStatus))
+      .reduce((sum, c) => sum + (Number(c.commitmentAmount) || 0), 0);
+    return { total, active, overdue, replied, committed };
   }, [contacts]);
 
   const tickerItems = useMemo(() => contacts.filter((c) => isOverdue(c) || isDueToday(c)), [contacts]);
@@ -344,6 +360,7 @@ export default function OutreachTerminal() {
       .filter((c) => (fStatus === "All" ? true : c.status === fStatus))
       .filter((c) => (fPlatform === "All" ? true : c.platform === fPlatform))
       .filter((c) => (fCountry === "All" ? true : c.country === fCountry))
+      .filter((c) => (fCommitment === "All" ? true : c.commitmentStatus === fCommitment))
       .filter((c) => (overdueOnly ? isOverdue(c) || isDueToday(c) : true))
       .filter((c) => {
         if (!search.trim()) return true;
@@ -361,7 +378,7 @@ export default function OutreachTerminal() {
         if (ao !== bo) return ao - bo;
         return (a.nextFollowUp || "9999").localeCompare(b.nextFollowUp || "9999");
       });
-  }, [contacts, fType, fStage, fStatus, fPlatform, fCountry, overdueOnly, search]);
+  }, [contacts, fType, fStage, fStatus, fPlatform, fCountry, fCommitment, overdueOnly, search]);
 
   function openAdd() { setForm(emptyForm()); setModalOpen(true); }
   function openEdit(c) { setForm(c); setModalOpen(true); }
@@ -594,6 +611,7 @@ export default function OutreachTerminal() {
             <span>ACTIVE <b style={{ color: "#7fe08a" }}>{stats.active}</b></span>
             <span>REPLIED <b style={{ color: BRAND.blue }}>{stats.replied}</b></span>
             <span>OVERDUE <b style={{ color: stats.overdue ? "#ff7a6b" : "#8a9290" }}>{stats.overdue}</b></span>
+            <span>COMMITTED <b style={{ color: BRAND.gold }}>{fmtMoney(stats.committed)}</b></span>
           </div>
           <button className="sm:hidden p-1.5" onClick={() => setMobileMenuOpen((v) => !v)} style={{ color: "#8a9290" }}>
             <Menu size={20} />
@@ -606,6 +624,7 @@ export default function OutreachTerminal() {
             <span>ACTIVE <b style={{ color: "#7fe08a" }}>{stats.active}</b></span>
             <span>REPLIED <b style={{ color: BRAND.blue }}>{stats.replied}</b></span>
             <span>OVERDUE <b style={{ color: stats.overdue ? "#ff7a6b" : "#8a9290" }}>{stats.overdue}</b></span>
+            <span>COMMITTED <b style={{ color: BRAND.gold }}>{fmtMoney(stats.committed)}</b></span>
           </div>
         )}
         {/* menu / tabs */}
@@ -613,6 +632,7 @@ export default function OutreachTerminal() {
           {[
             { id: "pipeline", label: "Pipeline" },
             { id: "directory", label: `Investor Directory${directory.length ? ` (${directory.length})` : ""}` },
+            { id: "onepager", label: "One-Pager" },
           ].map((t) => (
             <button
               key={t.id}
@@ -644,8 +664,11 @@ export default function OutreachTerminal() {
         </div>
       </div>
 
-      <div className="max-w-6xl mx-auto px-4 py-5">
-        {tab === "pipeline" ? (
+      {tab === "onepager" ? (
+        <OnePagerGenerator />
+      ) : (
+        <div className="max-w-6xl mx-auto px-4 py-5">
+          {tab === "pipeline" ? (
           <PipelineTab
             error={pipelineError}
             search={search} setSearch={setSearch}
@@ -654,6 +677,7 @@ export default function OutreachTerminal() {
             fStatus={fStatus} setFStatus={setFStatus}
             fPlatform={fPlatform} setFPlatform={setFPlatform}
             fCountry={fCountry} setFCountry={setFCountry}
+            fCommitment={fCommitment} setFCommitment={setFCommitment}
             countryOptions={countryOptions}
             overdueOnly={overdueOnly} setOverdueOnly={setOverdueOnly}
             openAdd={openAdd}
@@ -694,8 +718,9 @@ export default function OutreachTerminal() {
             addToPipeline={addToPipeline}
             addedFlash={addedFlash}
           />
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       {modalOpen && (
         <ContactModal form={form} setForm={setForm} onClose={() => setModalOpen(false)} onSave={saveForm} onDelete={removeContact} />
@@ -709,7 +734,7 @@ export default function OutreachTerminal() {
 function PipelineTab(props) {
   const {
     error, search, setSearch, fType, setFType, fStage, setFStage, fStatus, setFStatus,
-    fPlatform, setFPlatform, fCountry, setFCountry, countryOptions, overdueOnly, setOverdueOnly,
+    fPlatform, setFPlatform, fCountry, setFCountry, fCommitment, setFCommitment, countryOptions, overdueOnly, setOverdueOnly,
     openAdd, loading, filtered, contactsLength, isOverdue, isDueToday,
     markContactedToday, snooze, openEdit, removeContact,
   } = props;
@@ -733,6 +758,7 @@ function PipelineTab(props) {
       <FilterRow label="Status" value={fStatus} setValue={setFStatus} options={STATUSES} />
       <FilterRow label="Platform" value={fPlatform} setValue={setFPlatform} options={PLATFORMS} />
       {countryOptions.length > 0 && <FilterRow label="Country" value={fCountry} setValue={setFCountry} options={countryOptions} />}
+      <FilterRow label="Commitment" value={fCommitment} setValue={setFCommitment} options={COMMITMENT_STATUSES} />
       <div className="flex flex-wrap gap-1.5 mb-5">
         <Chip active={overdueOnly} onClick={() => setOverdueOnly((v) => !v)}>Due / overdue only</Chip>
       </div>
@@ -763,6 +789,11 @@ function PipelineTab(props) {
                 <span className="mono text-[10px] uppercase px-2 py-0.5 border" style={{ borderColor: "#2a3330", color: "#8a9290" }}>{c.stageFocus}</span>
                 {c.country && <span className="mono text-[10px] uppercase px-2 py-0.5 border" style={{ borderColor: "#2a3330", color: "#8a9290" }}>{c.country}</span>}
                 <StatusBadge status={c.status} />
+                {c.commitmentStatus !== "None" && (
+                  <span className="mono text-[10px] uppercase px-2 py-0.5 border" style={{ borderColor: BRAND.gold, color: BRAND.gold }}>
+                    {c.commitmentStatus}{c.commitmentAmount ? ` · ${fmtMoney(c.commitmentAmount)}` : ""}
+                  </span>
+                )}
                 <div className="mono text-[11px]" style={{ color: overdue ? "#ff7a6b" : dueToday ? BRAND.gold : "#8a9290" }}>
                   {c.nextFollowUp ? `next: ${c.nextFollowUp}` : "no follow-up set"}{overdue && " (overdue)"}{dueToday && " (today)"}
                 </div>
@@ -995,6 +1026,21 @@ function ContactModal({ form, setForm, onClose, onSave, onDelete }) {
               <input type="date" value={form.nextFollowUp} onChange={(e) => setForm({ ...form, nextFollowUp: e.target.value })} className="w-full bg-transparent border px-2 py-1.5 text-sm outline-none" style={inputStyle} />
             </Field>
           </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <Field label="Commitment status">
+              <select value={form.commitmentStatus} onChange={(e) => setForm({ ...form, commitmentStatus: e.target.value })} className="w-full border px-2 py-1.5 text-sm outline-none" style={inputStyle}>
+                {COMMITMENT_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </Field>
+            <Field label="Commitment amount ($)">
+              <input type="number" value={form.commitmentAmount} onChange={(e) => setForm({ ...form, commitmentAmount: e.target.value })} className="w-full bg-transparent border px-2 py-1.5 text-sm outline-none" style={inputStyle} />
+            </Field>
+          </div>
+
+          <Field label="Target close date">
+            <input type="date" value={form.targetCloseDate} onChange={(e) => setForm({ ...form, targetCloseDate: e.target.value })} className="w-full bg-transparent border px-2 py-1.5 text-sm outline-none" style={inputStyle} />
+          </Field>
 
           <Field label="Notes">
             <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={3} className="w-full bg-transparent border px-2 py-1.5 text-sm outline-none resize-none" style={inputStyle} />

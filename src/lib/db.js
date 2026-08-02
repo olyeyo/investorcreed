@@ -23,6 +23,9 @@ function toDbContact(c, userId) {
     last_contact: c.lastContact || null,
     next_follow_up: c.nextFollowUp || null,
     notes: c.notes || "",
+    commitment_status: c.commitmentStatus || "None",
+    commitment_amount: Number(c.commitmentAmount) || 0,
+    target_close_date: c.targetCloseDate || null,
   };
   if (userId) row.user_id = userId;
   return row;
@@ -42,6 +45,9 @@ function fromDbContact(r) {
     lastContact: r.last_contact || "",
     nextFollowUp: r.next_follow_up || "",
     notes: r.notes || "",
+    commitmentStatus: r.commitment_status || "None",
+    commitmentAmount: Number(r.commitment_amount) || 0,
+    targetCloseDate: r.target_close_date || "",
     createdAt: r.created_at,
   };
 }

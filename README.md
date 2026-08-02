@@ -121,6 +121,13 @@ infrastructure — a verified domain plus a webhook parsing incoming mail. That'
 a bigger, separate setup; for now, replies are still tracked manually via the
 "Replied" status in your pipeline.
 
+- The **One-Pager** tab generates a print-ready investor teaser (Georgia
+  serif, letter-size, its own light document styling deliberately separate
+  from the dark app chrome) — edit fields on the left, "Export PDF" uses the
+  browser's native print-to-PDF. It doesn't persist yet — refreshing resets it
+  to the default draft — since that'd need its own Supabase table; say the
+  word if you want that wired in.
+
 ## Notes
 
 - `xlsx` (SheetJS) parsing still happens entirely in the browser — the
