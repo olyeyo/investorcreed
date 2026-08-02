@@ -13,6 +13,7 @@ import { Plus, X, Printer, Copy, Check } from 'lucide-react';
 
 const DEFAULT_STATE = {
   companyName: 'ORI',
+  logoDataUrl: null,
   tagline: 'Verified short-let listings for Nigerian travelers',
   oneLiner:
     'ORI lets travelers book vetted short-let apartments in Lagos and Abuja without the fake-listing risk that plagues informal channels.',
@@ -78,6 +79,16 @@ export default function OnePagerGenerator() {
 
   const handlePrint = () => window.print();
 
+  const handleLogoUpload = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setData((prev) => ({ ...prev, logoDataUrl: reader.result }));
+    reader.readAsDataURL(file);
+  };
+
+  const clearLogo = () => setData((prev) => ({ ...prev, logoDataUrl: null }));
+
   const handleCopyLink = async () => {
     // Placeholder: if you persist one-pagers to Supabase, swap this for a
     // real shareable URL (e.g. /teaser/:id) instead of copying nothing.
@@ -112,6 +123,28 @@ export default function OnePagerGenerator() {
               One-Pager Generator
             </div>
             <Field label="Company name" value={data.companyName} onChange={(v) => set(['companyName'], v)} />
+
+            <div className="mb-2">
+              <label className="block text-[10px] uppercase tracking-wide text-gray-500 mb-1">Company logo</label>
+              {data.logoDataUrl ? (
+                <div className="flex items-center gap-2">
+                  <img src={data.logoDataUrl} alt="Logo preview" className="h-10 w-auto bg-white p-1" />
+                  <button
+                    onClick={clearLogo}
+                    className="text-xs uppercase tracking-wide text-gray-500 hover:text-red-400 flex items-center gap-1"
+                  >
+                    <X size={12} /> Remove
+                  </button>
+                </div>
+              ) : (
+                <label className="inline-flex items-center gap-1.5 text-xs uppercase tracking-wide text-[#006DDB] hover:text-[#C7A05F] cursor-pointer border border-gray-800 px-2 py-1.5">
+                  Upload logo
+                  <input type="file" accept="image/*" onChange={handleLogoUpload} className="hidden" />
+                </label>
+              )}
+              <p className="text-[10px] text-gray-600 mt-1">PNG with transparent background looks best.</p>
+            </div>
+
             <Field label="Tagline" value={data.tagline} onChange={(v) => set(['tagline'], v)} />
             <TextArea label="One-liner" value={data.oneLiner} onChange={(v) => set(['oneLiner'], v)} />
           </div>
@@ -224,6 +257,9 @@ function OnePagerDocument({ data }) {
       {/* Header */}
       <div className="flex justify-between items-end border-b-2 border-[#1A1A1A] pb-4 mb-6">
         <div>
+          {data.logoDataUrl && (
+            <img src={data.logoDataUrl} alt={`${data.companyName} logo`} className="h-10 w-auto mb-2" style={{ objectFit: 'contain' }} />
+          )}
           <h1 className="text-4xl font-bold tracking-tight" style={{ letterSpacing: '-0.02em' }}>
             {data.companyName || 'Company'}
           </h1>

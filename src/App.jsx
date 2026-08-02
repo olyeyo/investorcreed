@@ -603,7 +603,7 @@ export default function OutreachTerminal() {
       {/* top bar */}
       <div className="border-b" style={{ borderColor: "#1c2422" }}>
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-2">
-          <img src="/logo.jpg" alt="Suckmill" style={{ height: 40, width: "auto" }} />
+          <img src="/logo.png" alt="Suckmill" style={{ height: 40, width: "auto" }} />
           <div className="hidden sm:flex mono text-xs items-center gap-4" style={{ color: "#8a9290" }}>
             <span>{clockStr}</span>
             <span>|</span>
